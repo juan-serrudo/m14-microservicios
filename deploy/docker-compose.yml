@@ -1,0 +1,88 @@
+version: "3.9"
+
+networks:
+  public_net:
+  private_net:
+
+volumes:
+  storage_sqlite_data:
+
+services:
+  # Load Balancer delante de A (2 réplicas)
+  lb-a:
+    build: ./lb-a
+    image: m14/lb-a:latest
+    depends_on:
+      - password-service-1
+      - password-service-2
+    ports:
+      - "8080:80"
+    networks:
+      - public_net
+      - private_net
+    restart: unless-stopped
+
+  password-service-1:
+    build: ../microservices/password-service
+    image: m14/password-service:latest
+    env_file:
+      - ./env/password-service.example.env
+    environment:
+      - SERVICE_INSTANCE_ID=ps-1
+    networks:
+      - private_net
+    depends_on:
+      - storage-sqlite
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  password-service-2:
+    build: ../microservices/password-service
+    image: m14/password-service:latest
+    env_file:
+      - ./env/password-service.example.env
+    environment:
+      - SERVICE_INSTANCE_ID=ps-2
+    networks:
+      - private_net
+    depends_on:
+      - storage-sqlite
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  storage-sqlite:
+    build: ../microservices/storage-sqlite
+    image: m14/storage-sqlite:latest
+    env_file:
+      - ./env/storage-sqlite.example.env
+    volumes:
+      - storage_sqlite_data:/data
+    networks:
+      - private_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build: ./frontend
+    image: m14/frontend:latest
+    ports:
+      - "3000:80"
+    networks:
+      - public_net
+    restart: unless-stopped
+
