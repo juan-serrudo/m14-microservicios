@@ -16,21 +16,14 @@ Sistema de microservicios para gestión de contraseñas con arquitectura dividid
        │
        ▼
 ┌─────────────┐
-│  NGINX LB   │ (puerto 8080)
-└──────┬──────┘
-       │ Round Robin
-       ├──────────────┐
-       ▼              ▼
-┌──────────┐    ┌──────────┐
-│  A (ps1) │    │  A (ps2) │
-└────┬─────┘    └────┬─────┘
-     │               │
-     └───────┬───────┘
-             │ HTTP + X-API-Key
-             ▼
-     ┌──────────────┐
-     │  B (storage) │
-     └──────────────┘
+│  NGINX LB   │───────────────────────┐
+└──────┬──────┘                       │
+       │ Round Robin                  │
+       ├──────────────┐               │
+       ▼              ▼               ▼
+┌──────────┐    ┌──────────┐ ┌──────────────┐
+│  A (ps1) │    │  A (ps2) │ │  B (storage) │
+└──────────┘    └──────────┘ └──────────────┘
 ```
 
 ## Estructura del Proyecto
