@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Aplicación NestJS
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: m14-m1
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ENV_ENTORNO=production
+      - ENV_CORS=*
+      - ENV_SWAGGER_SHOW=true
+      - ENV_SYNCHRONIZE=false
+      - APP_MAX_SIZE=10mb
+    volumes:
+      # Montar directorio para persistir la base de datos SQLite
+      - ./data:/app/data
+      # Montar la base de datos SQLite existente si existe
+      - ./database.sqlite:/app/database.sqlite:ro
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nginx como proxy reverso (opcional)
+  nginx:
+    image: nginx:alpine
+    container_name: m14-nginx
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  app-data:
+    driver: local
