@@ -334,18 +334,3 @@ docker compose down
 docker compose down -v
 ```
 
-## Notas de Seguridad
-
-- **No loguear secretos**: Las contraseñas y claves maestras no se registran en logs
-- **No exponer datos sensibles**: `encryptedPassword` y `masterKeyHash` no se envían en respuestas públicas
-- **Autenticación interna**: A→B usa X-API-Key (configurar en variables de entorno)
-- **Cifrado**: Todas las contraseñas se cifran antes de almacenarse
-
-## Próximos Pasos
-
-1. Agregar más tests unitarios y de integración
-2. Implementar rate limiting
-3. Agregar métricas y monitoreo
-4. Configurar HTTPS/TLS
-5. Implementar autenticación de usuarios en la API pública
-
