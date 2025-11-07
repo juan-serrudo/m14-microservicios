@@ -9,6 +9,7 @@ export default () => {
     retryAttempts: parseInt(process.env.RETRY_ATTEMPTS || '2', 10) || 2,
     cbFailureThreshold: parseInt(process.env.CB_FAILURE_THRESHOLD || '5', 10) || 5,
     cbResetTimeoutMs: parseInt(process.env.CB_RESET_TIMEOUT_MS || '15000', 10) || 15000,
+    swaggerShow: process.env.ENV_SWAGGER_SHOW === 'true' || false,
   };
 };
 
