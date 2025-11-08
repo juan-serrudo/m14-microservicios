@@ -155,6 +155,15 @@ curl -X POST http://localhost:8080/api/v1/passwords/1/decrypt \
 curl http://localhost:8080/health
 ```
 
+### 8. Documentación Swagger
+
+Una vez iniciado el servicio, accede a la documentación Swagger:
+
+- **Password Service**: http://localhost:8080/api (a través del load balancer)
+- **Storage SQLite**: http://localhost:3001/api (solo accesible desde dentro de la red Docker)
+
+Nota: Swagger está habilitado por defecto con `ENV_SWAGGER_SHOW=true` en los archivos de configuración.
+
 ## Endpoints del Microservicio B (storage-sqlite)
 
 **Nota**: Estos endpoints son internos y requieren el header `X-API-Key`. No están expuestos públicamente.

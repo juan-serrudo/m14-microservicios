@@ -5,6 +5,10 @@
   "author": "Juan Victor Serrudo Chavez",
   "private": true,
   "license": "MIT",
+  "contact": {
+    "name": "Juan Victor",
+    "email": "juan.serrudo@ucb.edu.bo"
+  },
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -33,7 +37,8 @@
     "crypto-js": "^4.2.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "uuid": "^11.0.3"
+    "uuid": "^11.0.3",
+    "chalk": "^4.1.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

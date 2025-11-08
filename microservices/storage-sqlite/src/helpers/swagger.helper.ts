@@ -1,32 +1,32 @@
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { nameParsePresentation } from './package-json.helper';
 
-export const configSwagger = (app: INestApplication) => {
+export const configSwagger = (app: INestApplication, packageJson: any) => {
   const config = new DocumentBuilder()
-    .setTitle('Storage SQLite Service')
-    .setVersion('0.0.1')
-    .setDescription('Microservicio de almacenamiento SQLite genérico')
-    .setContact('Juan Victor Serrudo Chavez', '', 'juan.serrudo@ucb.edu.bo')
+    .setTitle(nameParsePresentation(packageJson.name))
+    .setVersion(packageJson.version)
+    .setDescription(packageJson.description)
+    .setContact(packageJson.contact?.name || packageJson.author, '', packageJson.contact?.email || '')
     .addApiKey(
       {
         type: 'apiKey',
         name: 'X-API-Key',
         in: 'header',
-        description: 'API Key para autenticación',
+        description: 'API Key para autenticación interna',
       },
-      'api-key',
+      'X-API-Key',
     )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document, {
-    customSiteTitle: 'Storage SQLite Service',
+    customSiteTitle: nameParsePresentation(packageJson.name),
     customCss: `
-      .swagger-ui .topbar { display: none; }
-      .swagger-ui .info { margin: 20px 0;}
-      .swagger-ui .info hgroup.main { margin: 0 0 0;}
-      .title span { display: block; }
+         .swagger-ui .topbar { display: none; }
+         .swagger-ui .info { margin: 20px 0;}
+         .swagger-ui .info hgroup.main { margin: 0 0 0;}
+         .title span { display: block; }
     `,
   });
 };
-

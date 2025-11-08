@@ -1,5 +1,14 @@
+import { join } from 'path';
+
 export default () => {
+  const locatePackagejson = process.cwd();
+  let pm2 = false;
+  if (locatePackagejson.includes('dist')) {
+    pm2 = true;
+  }
+
   return {
+    packageJson: require(join(process.cwd(), pm2 ? '../package.json' : 'package.json')),
     port: parseInt(process.env.PORT || '3000', 10) || 3000,
     logLevel: process.env.LOG_LEVEL || 'info',
     storageBaseUrl: process.env.STORAGE_BASE_URL || 'http://storage-sqlite:3001',

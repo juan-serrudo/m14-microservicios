@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { AppDataSource } from './config/data-source';
 import { configSwagger } from './helpers/swagger.helper';
+import { bold } from 'chalk';
 
 async function runMigrations() {
   try {
@@ -51,17 +52,19 @@ async function bootstrap() {
   process.env.SQLITE_DB_PATH = configService.get<string>('sqliteDbPath');
   await runMigrations();
 
+  const packageJson = configService.get('packageJson');
   const port = configService.get<number>('port') || 3001;
-  const swaggerShow = configService.get<boolean>('swaggerShow');
 
   // Configurar Swagger si está habilitado
-  if (swaggerShow) {
-    configSwagger(app);
-    console.log(`📚 Swagger disponible en: http://0.0.0.0:${port}/api`);
+  if (configService.get('swaggerShow')) {
+    configSwagger(app, packageJson);
   }
 
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Storage SQLite service is running on: http://0.0.0.0:${port}`);
+  console.log(bold.blue(`🚀 Storage SQLite service is running on: http://0.0.0.0:${port}`));
+  if (configService.get('swaggerShow')) {
+    console.log(bold.green(`📚 Swagger documentation available at: http://0.0.0.0:${port}/api`));
+  }
 }
 
 bootstrap();

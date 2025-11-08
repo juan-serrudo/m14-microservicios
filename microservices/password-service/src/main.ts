@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { configSwagger } from './helpers/swagger.helper';
+import { bold } from 'chalk';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -22,18 +23,20 @@ async function bootstrap() {
   );
 
   const configService = app.get(ConfigService);
+  const packageJson = configService.get('packageJson');
   const port = configService.get<number>('port') || 3000;
   const instanceId = process.env.SERVICE_INSTANCE_ID || 'unknown';
-  const swaggerShow = configService.get<boolean>('swaggerShow');
 
   // Configurar Swagger si está habilitado
-  if (swaggerShow) {
-    configSwagger(app);
-    console.log(`📚 Swagger disponible en: http://0.0.0.0:${port}/api`);
+  if (configService.get('swaggerShow')) {
+    configSwagger(app, packageJson);
   }
 
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Password Service (${instanceId}) is running on: http://0.0.0.0:${port}`);
+  console.log(bold.blue(`🚀 Password Service (${instanceId}) is running on: http://0.0.0.0:${port}`));
+  if (configService.get('swaggerShow')) {
+    console.log(bold.green(`📚 Swagger documentation available at: http://0.0.0.0:${port}/api`));
+  }
 }
 
 bootstrap();
