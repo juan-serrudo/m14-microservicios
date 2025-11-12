@@ -4,8 +4,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import configuration from './config/configuration';
 import { AppController } from './controllers/app.controller';
 import { StorageController } from './controllers/storage.controller';
+import { AuditController } from './controllers/audit.controller';
 import { StorageService } from './services/storage.service';
 import { PasswordManager } from './entities/password-manager.entity';
+import { AuditPasswordEvents } from './entities/audit-password-events.entity';
 import { ApiKeyGuard } from './guards/api-key.guard';
 
 @Module({
@@ -20,7 +22,7 @@ import { ApiKeyGuard } from './guards/api-key.guard';
         return {
           type: 'sqlite',
           database: configService.get<string>('sqliteDbPath'),
-          entities: [PasswordManager],
+          entities: [PasswordManager, AuditPasswordEvents],
           migrations: [__dirname + '/../migrations/*{.ts,.js}'],
           synchronize: false,
           logging: false,
@@ -28,9 +30,9 @@ import { ApiKeyGuard } from './guards/api-key.guard';
       },
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([PasswordManager]),
+    TypeOrmModule.forFeature([PasswordManager, AuditPasswordEvents]),
   ],
-  controllers: [AppController, StorageController],
+  controllers: [AppController, StorageController, AuditController],
   providers: [StorageService, ApiKeyGuard],
 })
 export class AppModule {}

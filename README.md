@@ -2,10 +2,11 @@
 
 ## Descripción
 
-Sistema de microservicios para gestión de contraseñas con arquitectura dividida en dos servicios:
+Sistema de microservicios para gestión de contraseñas con arquitectura dividida en dos servicios y comunicación asíncrona mediante Kafka:
 
-- **password-service** (Microservicio A): API pública con lógica de negocio y cifrado
-- **storage-sqlite** (Microservicio B): API interna CRUD genérica para SQLite
+- **password-service** (Microservicio A): API pública con lógica de negocio y cifrado (Producer de Kafka)
+- **storage-sqlite** (Microservicio B): API interna CRUD genérica para SQLite (Consumer de Kafka)
+- **Kafka**: Broker de mensajería para eventos asíncronos
 
 ## Arquitectura
 
@@ -23,7 +24,17 @@ Sistema de microservicios para gestión de contraseñas con arquitectura dividid
        ▼              ▼               ▼
 ┌──────────┐    ┌──────────┐ ┌──────────────┐
 │  A (ps1) │    │  A (ps2) │ │  B (storage) │
-└──────────┘    └──────────┘ └──────────────┘
+│ Producer │    │ Producer │ │  Consumer    │
+└────┬─────┘    └────┬─────┘ └──────┬───────┘
+     │               │               │
+     └───────────────┴───────────────┘
+                     │
+                     ▼
+              ┌─────────────┐
+              │    Kafka    │
+              │   Broker    │
+              │  (KRaft)    │
+              └─────────────┘
 ```
 
 ## Estructura del Proyecto
@@ -163,6 +174,133 @@ Una vez iniciado el servicio, accede a la documentación Swagger:
 - **Storage SQLite**: http://localhost:3001/api (solo accesible desde dentro de la red Docker)
 
 Nota: Swagger está habilitado por defecto con `ENV_SWAGGER_SHOW=true` en los archivos de configuración.
+
+## Comunicación Asíncrona con Kafka
+
+El sistema implementa comunicación asíncrona mediante Kafka para eventos de contraseñas.
+
+### Arquitectura Kafka
+
+- **Producer**: `password-service` publica eventos cuando se crean, actualizan o eliminan contraseñas
+- **Consumer**: `storage-sqlite` consume eventos y los guarda en una tabla de auditoría
+- **Topic**: `passwords.v1.events` (1 partición, replication factor 1)
+- **Feature Flag**: `USE_EDA=true` para habilitar/deshabilitar eventos
+
+### Esquema de Eventos
+
+```json
+{
+  "eventId": "uuid",
+  "type": "password.created | password.updated | password.deleted",
+  "at": "ISO-8601 timestamp",
+  "schemaVersion": "1",
+  "data": {
+    "id": "number",
+    "title": "string",
+    "username": "string",
+    "url": "string",
+    "category": "string"
+  }
+}
+```
+
+**Nota**: Los eventos NO incluyen datos sensibles (no hay `encryptedPassword`, `masterKey`, `masterKeyHash`).
+
+### Probar Kafka
+
+#### 1. Crear una contraseña (dispara evento)
+
+```bash
+curl -X POST http://localhost:8080/api/v1/passwords \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Gmail Personal",
+    "description": "Cuenta principal",
+    "username": "usuario@gmail.com",
+    "password": "miContraseña123!",
+    "url": "https://gmail.com",
+    "category": "Redes Sociales",
+    "notes": "Test Kafka",
+    "masterKey": "miClaveMaestra123!"
+  }'
+```
+
+#### 2. Verificar eventos en la auditoría
+
+Los eventos se guardan automáticamente en la tabla `audit_password_events` en storage-sqlite.
+
+**Ver todos los eventos** (desde dentro de la red Docker o usando un proxy):
+
+```bash
+# Consultar eventos directamente en la base de datos (desde dentro del contenedor)
+docker exec -it storage-sqlite-1 sqlite3 /data/database.sqlite "SELECT eventId, type, occurredAt FROM audit_password_events ORDER BY receivedAt DESC LIMIT 10;"
+```
+
+**O usar el endpoint de auditoría** (requiere X-API-Key):
+
+```bash
+curl -X GET http://localhost:3001/api/v1/audit/password-events \
+  -H "X-API-Key: change-me"
+```
+
+**Ver estadísticas de eventos**:
+
+```bash
+curl -X GET http://localhost:3001/api/v1/audit/password-events/stats/summary \
+  -H "X-API-Key: change-me"
+```
+
+**Ver un evento específico por eventId**:
+
+```bash
+curl -X GET http://localhost:3001/api/v1/audit/password-events/{eventId} \
+  -H "X-API-Key: change-me"
+```
+
+#### 3. Verificar logs
+
+```bash
+# Ver logs del producer (password-service)
+docker logs password-service-1-1 | grep "Published"
+
+# Ver logs del consumer (storage-sqlite)
+docker logs storage-sqlite-1 | grep "Kafka\|event"
+```
+
+#### 4. Verificar idempotencia
+
+Crear la misma contraseña múltiples veces y verificar que los eventos se procesen correctamente sin duplicados (por eventId único).
+
+### Características de Kafka
+
+- **Idempotencia**: Los eventos se deduplican por `eventId` (índice único en la base de datos)
+- **DLQ (Dead Letter Queue)**: Eventos que fallan se guardan con tipo `dlq.error` y el error en el campo `error`
+- **Reintentos**: El consumer maneja reintentos automáticos
+- **Graceful Shutdown**: Ambos servicios manejan cierre limpio de conexiones Kafka
+
+### Configuración de Kafka
+
+**Variables de entorno (password-service)**:
+```env
+KAFKA_BROKERS=kafka:9092
+KAFKA_TOPIC_PASSWORD_EVENTS=passwords.v1.events
+KAFKA_CLIENT_ID=password-service
+USE_EDA=true
+```
+
+**Variables de entorno (storage-sqlite)**:
+```env
+KAFKA_BROKERS=kafka:9092
+KAFKA_TOPIC_PASSWORD_EVENTS=passwords.v1.events
+KAFKA_CLIENT_ID=storage-sqlite
+KAFKA_GROUP_ID=storage-sqlite-group
+```
+
+### Notas Importantes
+
+- **Consistencia Eventual**: Los eventos se procesan de forma asíncrona, por lo que puede haber un pequeño retraso entre la creación de la contraseña y el procesamiento del evento.
+- **No Bloqueante**: Si Kafka no está disponible, el producer no falla la operación principal, solo registra un warning.
+- **Auditoría Completa**: Todos los eventos se guardan en la tabla `audit_password_events` con timestamp, payload y posibles errores.
 
 ## Endpoints del Microservicio B (storage-sqlite)
 

@@ -41,7 +41,8 @@
     "sqlite3": "^5.1.7",
     "typeorm": "^0.3.21",
     "uuid": "^11.0.3",
-    "chalk": "^4.1.2"
+    "chalk": "^4.1.2",
+    "kafkajs": "^2.2.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",

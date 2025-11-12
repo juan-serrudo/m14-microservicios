@@ -1,8 +1,10 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { StorageClientService } from './storage-client.service';
 import { CipherService } from './cipher.service';
 import { CreatePasswordDto, UpdatePasswordDto, DecryptPasswordDto } from '../dto/password.dto';
 import { v4 as uuidv4 } from 'uuid';
+import { kafkaProducer } from '../infrastructure/kafka.producer';
 
 export interface PasswordResponse {
   id: number;
@@ -23,6 +25,7 @@ export class PasswordService {
   constructor(
     private readonly storageClient: StorageClientService,
     private readonly cipherService: CipherService,
+    private readonly configService: ConfigService,
   ) {}
 
   private generateTraceId(): string {
@@ -131,7 +134,27 @@ export class PasswordService {
         };
       }
 
-      return { data: this.sanitizeResponse(response.data) };
+      const createdPassword = this.sanitizeResponse(response.data);
+
+      // Publicar evento a Kafka si EDA está habilitado
+      const useEda = this.configService.get<boolean>('useEda');
+      if (useEda) {
+        try {
+          await kafkaProducer.publishPasswordCreated({
+            id: createdPassword.id,
+            title: createdPassword.title,
+            username: createdPassword.username,
+            url: createdPassword.url,
+            category: createdPassword.category,
+          });
+          this.logger.log(`Published password.created event for ID: ${createdPassword.id}`);
+        } catch (error) {
+          // No fallar la operación si Kafka falla, solo loguear
+          this.logger.warn(`Failed to publish Kafka event for password ${createdPassword.id}:`, error);
+        }
+      }
+
+      return { data: createdPassword };
     } catch (error) {
       this.logger.error('Error in create:', error);
       return {
@@ -208,6 +231,28 @@ export class PasswordService {
         };
       }
 
+      // Publicar evento a Kafka si EDA está habilitado
+      const useEda = this.configService.get<boolean>('useEda');
+      if (useEda) {
+        try {
+          // Obtener datos actualizados para el evento
+          const updatedResponse = await this.storageClient.findOne(id);
+          if (!updatedResponse.error && updatedResponse.data) {
+            const updatedPassword = this.sanitizeResponse(updatedResponse.data);
+            await kafkaProducer.publishPasswordUpdated({
+              id: updatedPassword.id,
+              title: updatedPassword.title,
+              username: updatedPassword.username,
+              url: updatedPassword.url,
+              category: updatedPassword.category,
+            });
+            this.logger.log(`Published password.updated event for ID: ${id}`);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to publish Kafka event for password ${id}:`, error);
+        }
+      }
+
       return { data: { id } };
     } catch (error) {
       this.logger.error('Error in update:', error);
@@ -266,6 +311,17 @@ export class PasswordService {
             retryable: response.error.retryable,
           },
         };
+      }
+
+      // Publicar evento a Kafka si EDA está habilitado
+      const useEda = this.configService.get<boolean>('useEda');
+      if (useEda) {
+        try {
+          await kafkaProducer.publishPasswordDeleted(id);
+          this.logger.log(`Published password.deleted event for ID: ${id}`);
+        } catch (error) {
+          this.logger.warn(`Failed to publish Kafka event for password ${id}:`, error);
+        }
       }
 
       return { data: { id, deleted: true } };

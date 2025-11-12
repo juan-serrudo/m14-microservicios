@@ -2,10 +2,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { AppDataSource } from './config/data-source';
 import { configSwagger } from './helpers/swagger.helper';
 import { bold } from 'chalk';
+import { KafkaConsumerService } from './infrastructure/kafka.consumer';
+import { AuditPasswordEvents } from './entities/audit-password-events.entity';
 
 async function runMigrations() {
   try {
@@ -60,10 +62,47 @@ async function bootstrap() {
     configSwagger(app, packageJson);
   }
 
+  // Iniciar Kafka consumer (en background, no bloquea el inicio)
+  let kafkaConsumer: KafkaConsumerService | null = null;
+  try {
+    const auditRepository = app.get(DataSource).getRepository(AuditPasswordEvents);
+    kafkaConsumer = new KafkaConsumerService(auditRepository);
+    // Iniciar en background sin bloquear
+    kafkaConsumer.start().catch((error) => {
+      console.warn(bold.yellow('⚠️  Error starting Kafka consumer:'), error);
+    });
+    // Dar tiempo para conectar
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  } catch (error) {
+    console.warn(bold.yellow('⚠️  Failed to initialize Kafka consumer, continuing without events:'), error);
+  }
+
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    console.log(bold.yellow('SIGTERM received, shutting down gracefully...'));
+    if (kafkaConsumer) {
+      await kafkaConsumer.stop();
+    }
+    await app.close();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', async () => {
+    console.log(bold.yellow('SIGINT received, shutting down gracefully...'));
+    if (kafkaConsumer) {
+      await kafkaConsumer.stop();
+    }
+    await app.close();
+    process.exit(0);
+  });
+
   await app.listen(port, '0.0.0.0');
   console.log(bold.blue(`🚀 Storage SQLite service is running on: http://0.0.0.0:${port}`));
   if (configService.get('swaggerShow')) {
     console.log(bold.green(`📚 Swagger documentation available at: http://0.0.0.0:${port}/api`));
+  }
+  if (kafkaConsumer) {
+    console.log(bold.green(`📨 Kafka consumer listening to topic: ${configService.get('kafkaTopicPasswordEvents')}`));
   }
 }
 

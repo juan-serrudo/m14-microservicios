@@ -4,8 +4,52 @@ networks:
 
 volumes:
   storage_sqlite_data:
+  kafka_data:
 
 services:
+  # Kafka Broker (KRaft mode)
+  kafka:
+    image: bitnami/kafka:3.7.0
+    container_name: kafka
+    environment:
+      - KAFKA_ENABLE_KRAFT=yes
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - ALLOW_PLAINTEXT_LISTENER=yes
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - private_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  # Kafka Topic Initializer
+  kafka-init:
+    image: bitnami/kafka:3.7.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      for i in {1..30}; do
+        kafka-topics.sh --bootstrap-server kafka:9092
+        --create --if-not-exists --topic passwords.v1.events
+        --partitions 1 --replication-factor 1 && exit 0;
+        echo "Esperando Kafka..."; sleep 5;
+      done; exit 1
+    networks:
+      - private_net
+    restart: "no"
   # Load Balancer delante de A (2 réplicas)
   lb-a:
     build: ./lb-a
@@ -30,7 +74,10 @@ services:
     networks:
       - private_net
     depends_on:
-      - storage-sqlite
+      storage-sqlite:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
@@ -49,7 +96,10 @@ services:
     networks:
       - private_net
     depends_on:
-      - storage-sqlite
+      storage-sqlite:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
@@ -67,6 +117,9 @@ services:
       - storage_sqlite_data:/data
     networks:
       - private_net
+    depends_on:
+      kafka:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/health"]
