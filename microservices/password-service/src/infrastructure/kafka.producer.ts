@@ -25,7 +25,7 @@ class KafkaProducerService {
   private isConnected = false;
 
   constructor() {
-    const brokers = (process.env.KAFKA_BROKERS || 'kafka:9092').split(',');
+    const brokers = (process.env.KAFKA_BROKERS || 'kafka:9093').split(',');
     const clientId = process.env.KAFKA_CLIENT_ID || 'password-service';
 
     this.kafka = new Kafka({

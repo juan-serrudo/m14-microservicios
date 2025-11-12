@@ -64,6 +64,8 @@ m14-microservicios/
 
 ## Instalación y Ejecución
 
+> **Nota**: Migramos de la imagen Bitnami a la Docker Official Image (`apache/kafka`) para operar Kafka en modo **KRaft** (sin ZooKeeper). Esto reduce la complejidad operativa y alinea el despliegue con las guías oficiales de Docker.
+
 ### 1. Configurar Variables de Entorno
 
 Copiar los archivos de ejemplo y ajustar si es necesario:
@@ -86,6 +88,39 @@ Este comando:
 - Configura las redes (pública y privada)
 - Inicia todos los servicios (2 réplicas de A, 1 de B, LB, frontend)
 - Ejecuta las migraciones automáticamente
+
+#### Listeners expuestos
+
+- `HOST` listener: `localhost:9092` para clientes externos o pruebas locales
+- `DOCKER` listener: `kafka:9093` para comunicación interna entre contenedores
+- Kafka corre en modo KRaft, eliminando por completo la dependencia de ZooKeeper.
+
+#### Pasos rápidos de prueba
+
+1. Crear una contraseña (produce un evento):
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/passwords \
+     -H "Content-Type: application/json" \
+     -d '{
+       "title": "Demo Kafka",
+       "username": "demo@kafka.io",
+       "password": "S3creta!",
+       "masterKey": "claveDemoKafka"
+     }'
+   ```
+2. Verificar que el evento llegó al consumer:
+   ```bash
+   docker logs deploy-storage-sqlite-1 | grep "Kafka\|Demo Kafka"
+   ```
+3. Consultar los eventos creados:
+   ```bash
+   curl -X GET http://localhost:3001/api/v1/audit/password-events \
+     -H "X-API-Key: change-me"
+   ```
+4. Listar tópicos disponibles (usa el listener interno `kafka:9093`):
+   ```bash
+   docker exec deploy-kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9093 --list
+   ```
 
 ### 3. Verificar que los Servicios Estén Funcionando
 
@@ -282,7 +317,7 @@ Crear la misma contraseña múltiples veces y verificar que los eventos se proce
 
 **Variables de entorno (password-service)**:
 ```env
-KAFKA_BROKERS=kafka:9092
+KAFKA_BROKERS=kafka:9093
 KAFKA_TOPIC_PASSWORD_EVENTS=passwords.v1.events
 KAFKA_CLIENT_ID=password-service
 USE_EDA=true
@@ -290,7 +325,7 @@ USE_EDA=true
 
 **Variables de entorno (storage-sqlite)**:
 ```env
-KAFKA_BROKERS=kafka:9092
+KAFKA_BROKERS=kafka:9093
 KAFKA_TOPIC_PASSWORD_EVENTS=passwords.v1.events
 KAFKA_CLIENT_ID=storage-sqlite
 KAFKA_GROUP_ID=storage-sqlite-group
@@ -301,6 +336,7 @@ KAFKA_GROUP_ID=storage-sqlite-group
 - **Consistencia Eventual**: Los eventos se procesan de forma asíncrona, por lo que puede haber un pequeño retraso entre la creación de la contraseña y el procesamiento del evento.
 - **No Bloqueante**: Si Kafka no está disponible, el producer no falla la operación principal, solo registra un warning.
 - **Auditoría Completa**: Todos los eventos se guardan en la tabla `audit_password_events` con timestamp, payload y posibles errores.
+- **Kafka en KRaft**: El broker utiliza la Docker Official Image (`apache/kafka`) en modo KRaft, por lo que no se despliega ni requiere ZooKeeper.
 
 ## Endpoints del Microservicio B (storage-sqlite)
 

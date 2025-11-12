@@ -20,7 +20,7 @@ class KafkaConsumerService {
   private auditRepository: Repository<AuditPasswordEvents>;
 
   constructor(auditRepository: Repository<AuditPasswordEvents>) {
-    const brokers = (process.env.KAFKA_BROKERS || 'kafka:9092').split(',');
+    const brokers = (process.env.KAFKA_BROKERS || 'kafka:9093').split(',');
     const clientId = process.env.KAFKA_CLIENT_ID || 'storage-sqlite';
     const groupId = process.env.KAFKA_GROUP_ID || 'storage-sqlite-group';
 
