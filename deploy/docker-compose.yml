@@ -10,7 +10,6 @@ services:
   # Kafka Broker en modo KRaft (sin ZooKeeper)
   kafka:
     image: bitnamilegacy/kafka:3.7.0
-    container_name: kafka
     hostname: kafka
     environment:
       - KAFKA_ENABLE_KRAFT=yes
@@ -51,18 +50,17 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    network_mode: "service:kafka"
     command:
       - /bin/bash
       - -lc
       - |
         for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
-          /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic passwords.v1.events --partitions 1 --replication-factor 1 && exit 0
+          /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists --topic passwords.v1.events --partitions 1 --replication-factor 1 && exit 0
           echo "Esperando Kafka..."
           sleep 5
         done
         exit 1
-    networks:
-      - private_net
     restart: "no"
   # Load Balancer delante de A (2 réplicas)
   lb-a:
