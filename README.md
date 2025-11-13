@@ -93,6 +93,7 @@ Este comando:
 
 - `HOST` listener: `localhost:9092` para clientes externos o pruebas locales
 - `DOCKER` listener: `kafka:9093` para comunicación interna entre contenedores
+- `storage-sqlite`: `localhost:3001` para acceder al consumer y a los endpoints de auditoría
 - Kafka corre en modo KRaft, eliminando por completo la dependencia de ZooKeeper.
 
 #### Pasos rápidos de prueba
@@ -112,14 +113,14 @@ Este comando:
    ```bash
    docker logs deploy-storage-sqlite-1 | grep "Kafka\|Demo Kafka"
    ```
-3. Consultar los eventos creados:
+3. Consultar los eventos creados (disponible desde el host en el puerto 3001):
    ```bash
    curl -X GET http://localhost:3001/api/v1/audit/password-events \
      -H "X-API-Key: change-me"
    ```
-4. Listar tópicos disponibles (usa el listener interno `kafka:9093`):
+4. Listar tópicos disponibles (usa el listener interno `kafka:9092`):
    ```bash
-   docker exec deploy-kafka-1 /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9093 --list
+   docker exec deploy-kafka-1 /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
    ```
 
 ### 3. Verificar que los Servicios Estén Funcionando
@@ -128,8 +129,8 @@ Este comando:
 # Health check del load balancer (debe redirigir a A)
 curl http://localhost:8080/health
 
-# Health check directo de storage (solo desde dentro de la red)
-# curl http://localhost:3001/health (no accesible desde fuera)
+# Health check directo de storage (disponible en el host)
+curl http://localhost:3001/health
 
 # Frontend
 curl http://localhost:3000
@@ -206,7 +207,7 @@ curl http://localhost:8080/health
 Una vez iniciado el servicio, accede a la documentación Swagger:
 
 - **Password Service**: http://localhost:8080/api (a través del load balancer)
-- **Storage SQLite**: http://localhost:3001/api (solo accesible desde dentro de la red Docker)
+- **Storage SQLite**: http://localhost:3001/api (requiere `X-API-Key`)
 
 Nota: Swagger está habilitado por defecto con `ENV_SWAGGER_SHOW=true` en los archivos de configuración.
 
@@ -268,7 +269,8 @@ Los eventos se guardan automáticamente en la tabla `audit_password_events` en s
 
 ```bash
 # Consultar eventos directamente en la base de datos (desde dentro del contenedor)
-docker exec -it storage-sqlite-1 sqlite3 /data/database.sqlite "SELECT eventId, type, occurredAt FROM audit_password_events ORDER BY receivedAt DESC LIMIT 10;"
+docker run --rm -it -v deploy_storage_sqlite_data:/data alpine \
+  sh -c "apk add --no-cache sqlite >/dev/null && sqlite3 /data/database.sqlite \"SELECT eventId, type, occurredAt FROM audit_password_events ORDER BY receivedAt DESC LIMIT 10;\""
 ```
 
 **O usar el endpoint de auditoría** (requiere X-API-Key):
@@ -296,10 +298,10 @@ curl -X GET http://localhost:3001/api/v1/audit/password-events/{eventId} \
 
 ```bash
 # Ver logs del producer (password-service)
-docker logs password-service-1-1 | grep "Published"
+docker logs deploy-password-service-1-1 | grep "Published"
 
 # Ver logs del consumer (storage-sqlite)
-docker logs storage-sqlite-1 | grep "Kafka\|event"
+docker logs deploy-storage-sqlite-1 | grep "Kafka\|event"
 ```
 
 #### 4. Verificar idempotencia
@@ -340,7 +342,7 @@ KAFKA_GROUP_ID=storage-sqlite-group
 
 ## Endpoints del Microservicio B (storage-sqlite)
 
-**Nota**: Estos endpoints son internos y requieren el header `X-API-Key`. No están expuestos públicamente.
+**Nota**: Estos endpoints están expuestos en `localhost:3001`, pero requieren el header `X-API-Key` para su consumo.
 
 ```
 GET    /api/v1/storage/password_manager      # Listar todos

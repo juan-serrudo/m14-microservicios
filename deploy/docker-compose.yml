@@ -99,7 +99,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -123,7 +123,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -136,6 +136,8 @@ services:
       - ./env/storage-sqlite.example.env
     volumes:
       - storage_sqlite_data:/data
+    ports:
+      - "3001:3001"
     networks:
       - private_net
     depends_on:
@@ -145,7 +147,7 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
