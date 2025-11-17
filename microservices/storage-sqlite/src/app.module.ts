@@ -9,6 +9,7 @@ import { StorageService } from './services/storage.service';
 import { PasswordManager } from './entities/password-manager.entity';
 import { AuditPasswordEvents } from './entities/audit-password-events.entity';
 import { ApiKeyGuard } from './guards/api-key.guard';
+import { JwtGuard } from './guards/jwt.guard';
 
 @Module({
   imports: [
@@ -33,7 +34,7 @@ import { ApiKeyGuard } from './guards/api-key.guard';
     TypeOrmModule.forFeature([PasswordManager, AuditPasswordEvents]),
   ],
   controllers: [AppController, StorageController, AuditController],
-  providers: [StorageService, ApiKeyGuard],
+  providers: [StorageService, ApiKeyGuard, JwtGuard],
 })
 export class AppModule {}
 

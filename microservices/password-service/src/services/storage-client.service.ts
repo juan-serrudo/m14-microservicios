@@ -5,6 +5,7 @@ import { firstValueFrom, timeout, delay, catchError, throwError, retryWhen, conc
 import { CircuitBreaker, CircuitState } from '../utils/circuit-breaker';
 import { v4 as uuidv4 } from 'uuid';
 import { AxiosResponse } from 'axios';
+import { OAuth2Service } from './oauth2.service';
 
 export interface StorageResponse {
   data?: any;
@@ -21,22 +22,29 @@ export class StorageClientService {
   private readonly logger = new Logger(StorageClientService.name);
   private readonly circuitBreaker: CircuitBreaker;
   private readonly baseUrl: string;
-  private readonly apiKey: string;
   private readonly requestTimeout: number;
   private readonly retryAttempts: number;
+  private readonly useOAuth2: boolean;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly oauth2Service: OAuth2Service,
   ) {
     this.baseUrl = this.configService.get<string>('storageBaseUrl') || 'http://storage-sqlite:3001';
-    this.apiKey = this.configService.get<string>('storageApiKey') || 'change-me';
     this.requestTimeout = this.configService.get<number>('requestTimeoutMs') || 3000;
     this.retryAttempts = this.configService.get<number>('retryAttempts') || 2;
+    this.useOAuth2 = this.configService.get<string>('USE_OAUTH2') !== 'false'; // Por defecto true
 
     const failureThreshold = this.configService.get<number>('cbFailureThreshold') || 5;
     const resetTimeout = this.configService.get<number>('cbResetTimeoutMs') || 15000;
     this.circuitBreaker = new CircuitBreaker(failureThreshold, resetTimeout);
+
+    if (this.useOAuth2) {
+      this.logger.log('Storage client configured to use OAuth2 authentication');
+    } else {
+      this.logger.warn('Storage client configured to use legacy X-API-Key authentication');
+    }
   }
 
   private async executeRequest<T>(
@@ -61,10 +69,42 @@ export class StorageClientService {
 
     try {
       const url = `${this.baseUrl}${endpoint}`;
-      const headers = {
-        'X-API-Key': this.apiKey,
+      
+      // Obtener token OAuth2 si está habilitado
+      let authHeader: string;
+      if (this.useOAuth2) {
+        try {
+          const accessToken = await this.oauth2Service.getAccessToken();
+          authHeader = `Bearer ${accessToken}`;
+        } catch (oauthError) {
+          this.logger.error(`Failed to obtain OAuth2 token: ${oauthError.message}`);
+          this.circuitBreaker.recordFailure();
+          throw new HttpException(
+            {
+              code: 'OAUTH2_ERROR',
+              message: 'No se pudo autenticar con el servicio de almacenamiento',
+              traceId,
+              retryable: true,
+            },
+            HttpStatus.UNAUTHORIZED,
+          );
+        }
+      } else {
+        // Fallback a X-API-Key para compatibilidad
+        const apiKey = this.configService.get<string>('storageApiKey') || 'change-me';
+        authHeader = apiKey;
+      }
+
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
+
+      // Usar Authorization Bearer para OAuth2 o X-API-Key para legacy
+      if (this.useOAuth2) {
+        headers['Authorization'] = authHeader;
+      } else {
+        headers['X-API-Key'] = authHeader;
+      }
 
       let request$: any;
       if (method === 'GET') {
@@ -107,6 +147,11 @@ export class StorageClientService {
           ),
           catchError((error) => {
             this.logger.error(`Request failed for ${endpoint}:`, error.message);
+            // Si es error 401 (Unauthorized), limpiar caché de token
+            if (error.response?.status === 401 && this.useOAuth2) {
+              this.logger.warn('Received 401 Unauthorized, clearing OAuth2 token cache');
+              this.oauth2Service.clearCache();
+            }
             this.circuitBreaker.recordFailure();
             return throwError(() => error);
           }),

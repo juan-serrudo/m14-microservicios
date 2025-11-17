@@ -23,6 +23,11 @@ export default () => {
     kafkaTopicPasswordEvents: process.env.KAFKA_TOPIC_PASSWORD_EVENTS || 'passwords.v1.events',
     kafkaClientId: process.env.KAFKA_CLIENT_ID || 'password-service',
     useEda: process.env.USE_EDA === 'true' || false,
+    // OAuth2 / Keycloak
+    keycloakUrl: process.env.KEYCLOAK_URL || 'http://keycloak:8080',
+    keycloakRealm: process.env.KEYCLOAK_REALM || 'm14-microservicios',
+    keycloakClientId: process.env.KEYCLOAK_CLIENT_ID || 'password-service-client',
+    keycloakClientSecret: process.env.KEYCLOAK_CLIENT_SECRET || 'password-service-secret-2024',
   };
 };
 

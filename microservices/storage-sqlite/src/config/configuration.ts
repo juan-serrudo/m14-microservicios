@@ -18,6 +18,10 @@ export default () => {
     kafkaTopicPasswordEvents: process.env.KAFKA_TOPIC_PASSWORD_EVENTS || 'passwords.v1.events',
     kafkaClientId: process.env.KAFKA_CLIENT_ID || 'storage-sqlite',
     kafkaGroupId: process.env.KAFKA_GROUP_ID || 'storage-sqlite-group',
+    // OAuth2 / Keycloak for JWT Validation
+    keycloakUrl: process.env.KEYCLOAK_URL || 'http://keycloak:8080',
+    keycloakRealm: process.env.KEYCLOAK_REALM || 'm14-microservicios',
+    keycloakAudience: process.env.KEYCLOAK_AUDIENCE || 'password-service-client',
   };
 };
 

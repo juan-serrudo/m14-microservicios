@@ -1,13 +1,14 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiResponse, ApiSecurity } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiParam, ApiResponse, ApiSecurity, ApiBearerAuth } from '@nestjs/swagger';
 import { StorageService } from '../services/storage.service';
-import { ApiKeyGuard } from '../guards/api-key.guard';
+import { JwtGuard } from '../guards/jwt.guard';
 import { PasswordManager } from '../entities/password-manager.entity';
 
 @ApiTags('STORAGE - PASSWORD MANAGER')
-@ApiSecurity('X-API-Key')
+@ApiBearerAuth()
+@ApiSecurity('Bearer')
 @Controller('api/v1/storage/password_manager')
-@UseGuards(ApiKeyGuard)
+@UseGuards(JwtGuard)
 export class StorageController {
   constructor(private readonly storageService: StorageService) {}
 

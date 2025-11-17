@@ -9,6 +9,7 @@ networks:
 volumes:
   storage_sqlite_data:
   kafka_data:
+  keycloak_data:
 
 services:
   # Kafka Broker en modo KRaft (sin ZooKeeper)
@@ -67,6 +68,36 @@ services:
         done
         exit 1
     restart: "no"
+
+  # Keycloak - Servidor de autenticación OAuth2/OpenID Connect
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.0
+    hostname: keycloak
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_HTTP_ENABLED=true
+      - KC_HTTP_PORT=8080
+      - KC_HEALTH_ENABLED=true
+      - KC_METRICS_ENABLED=true
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      - private_net
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/master HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 && cat <&3 | grep -q 'HTTP/1.1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
   # Load Balancer delante de A (2 réplicas)
   lb-a:
     build: ./lb-a
@@ -93,6 +124,8 @@ services:
     depends_on:
       storage-sqlite:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
       kafka:
         condition: service_healthy
       kafka-init:
@@ -116,6 +149,8 @@ services:
       - private_net
     depends_on:
       storage-sqlite:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
       kafka:
         condition: service_healthy

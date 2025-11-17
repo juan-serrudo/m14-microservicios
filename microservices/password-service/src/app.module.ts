@@ -7,6 +7,7 @@ import { PasswordController } from './controllers/password.controller';
 import { PasswordService } from './services/password.service';
 import { StorageClientService } from './services/storage-client.service';
 import { CipherService } from './services/cipher.service';
+import { OAuth2Service } from './services/oauth2.service';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { CipherService } from './services/cipher.service';
     }),
   ],
   controllers: [AppController, PasswordController],
-  providers: [PasswordService, StorageClientService, CipherService],
+  providers: [PasswordService, StorageClientService, CipherService, OAuth2Service],
 })
 export class AppModule {}
 

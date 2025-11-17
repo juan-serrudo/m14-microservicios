@@ -27,14 +27,19 @@ Sistema de microservicios para gestión de contraseñas con arquitectura dividid
 │ Producer │    │ Producer │ │  Consumer    │
 └────┬─────┘    └────┬─────┘ └──────┬───────┘
      │               │               │
+     │ OAuth2       │ OAuth2        │
+     │ Bearer Token │ Bearer Token  │
      └───────────────┴───────────────┘
                      │
-                     ▼
-              ┌─────────────┐
-              │    Kafka    │
-              │   Broker    │
-              │  (KRaft)    │
-              └─────────────┘
+       ┌─────────────┴─────────────┐
+       │                           │
+       ▼                           ▼
+┌─────────────┐            ┌─────────────┐
+│  Keycloak   │            │    Kafka    │
+│  OAuth2/    │            │   Broker    │
+│  OpenID     │            │  (KRaft)    │
+│  Connect    │            └─────────────┘
+└─────────────┘
 ```
 
 ## Estructura del Proyecto
@@ -207,9 +212,145 @@ curl http://localhost:8080/health
 Una vez iniciado el servicio, accede a la documentación Swagger:
 
 - **Password Service**: http://localhost:8080/api (a través del load balancer)
-- **Storage SQLite**: http://localhost:3001/api (requiere `X-API-Key`)
+- **Storage SQLite**: http://localhost:3001/api (requiere `Authorization: Bearer <token>`)
+- **Keycloak Admin Console**: http://localhost:8081 (usuario: `admin`, contraseña: `admin`)
 
 Nota: Swagger está habilitado por defecto con `ENV_SWAGGER_SHOW=true` en los archivos de configuración.
+
+## Autenticación Servicio a Servicio con OAuth2/Keycloak
+
+El sistema implementa autenticación servicio a servicio usando **OAuth2 client_credentials** con **Keycloak** como proveedor de identidad, siguiendo principios de **Zero Trust**.
+
+### Arquitectura de Autenticación
+
+1. **Keycloak** actúa como servidor de autenticación OAuth2/OpenID Connect:
+   - Realm: `m14-microservicios`
+   - Client: `password-service-client` (tipo `confidential`)
+   - Flow habilitado: `client_credentials`
+
+2. **password-service** (cliente OAuth2):
+   - Obtiene access tokens desde Keycloak usando `client_credentials`
+   - Cachea tokens en memoria hasta su expiración (menos 60 segundos de margen)
+   - Incluye el token en todas las llamadas a `storage-sqlite` usando el header `Authorization: Bearer <token>`
+
+3. **storage-sqlite** (resource server):
+   - Valida tokens JWT usando JWKS (JSON Web Key Set) de Keycloak
+   - Verifica: firma, issuer (`iss`), audience (`aud`), expiración (`exp`)
+   - Rechaza peticiones sin token o con token inválido
+
+### Configuración Automática (Infrastructure as Code)
+
+Keycloak se configura automáticamente al iniciar con `docker compose up`:
+
+- El realm `m14-microservicios` se importa desde `deploy/keycloak/realm-export.json`
+- El client `password-service-client` se crea con el secret configurado
+- **No se requieren pasos manuales** en la UI de Keycloak
+
+### Flujo de Autenticación
+
+```
+1. password-service → Keycloak: POST /realms/m14-microservicios/protocol/openid-connect/token
+   (grant_type=client_credentials, client_id, client_secret)
+
+2. Keycloak → password-service: { access_token, expires_in, ... }
+
+3. password-service → storage-sqlite: GET /api/v1/storage/password_manager
+   (Authorization: Bearer <access_token>)
+
+4. storage-sqlite → Keycloak: GET /realms/m14-microservicios/protocol/openid-connect/certs
+   (para obtener claves públicas JWKS)
+
+5. storage-sqlite valida el token y procesa la petición
+```
+
+### Variables de Entorno
+
+**password-service** (`deploy/env/password-service.example.env`):
+```env
+USE_OAUTH2=true
+KEYCLOAK_URL=http://keycloak:8080
+KEYCLOAK_REALM=m14-microservicios
+KEYCLOAK_CLIENT_ID=password-service-client
+KEYCLOAK_CLIENT_SECRET=password-service-secret-2024
+```
+
+**storage-sqlite** (`deploy/env/storage-sqlite.example.env`):
+```env
+KEYCLOAK_URL=http://keycloak:8080
+KEYCLOAK_REALM=m14-microservicios
+KEYCLOAK_AUDIENCE=password-service-client
+```
+
+### Probar la Autenticación OAuth2
+
+#### 1. Verificar que Keycloak está funcionando
+
+```bash
+# Health check de Keycloak
+curl http://localhost:8081/health/ready
+
+# Obtener un token manualmente (desde el host)
+curl -X POST http://localhost:8081/realms/m14-microservicios/protocol/openid-connect/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=password-service-client" \
+  -d "client_secret=password-service-secret-2024"
+```
+
+#### 2. Verificar que password-service obtiene tokens
+
+```bash
+# Ver logs de password-service
+docker logs deploy-password-service-1-1 | grep "OAuth2\|access token"
+```
+
+#### 3. Probar un flujo completo
+
+```bash
+# Crear una contraseña (password-service obtendrá token automáticamente)
+curl -X POST http://localhost:8080/api/v1/passwords \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Test OAuth2",
+    "username": "test@oauth2.com",
+    "password": "test123",
+    "masterKey": "master123"
+  }'
+
+# Verificar que storage-sqlite recibió el token
+docker logs deploy-storage-sqlite-1 | grep "Token validated\|client"
+```
+
+#### 4. Verificar rechazo de peticiones sin token
+
+```bash
+# Intentar acceder directamente a storage-sqlite sin token (debe fallar)
+curl http://localhost:3001/api/v1/storage/password_manager
+# Debe retornar: 401 Unauthorized
+```
+
+#### 5. Verificar rechazo de tokens inválidos
+
+```bash
+# Intentar con un token inválido
+curl http://localhost:3001/api/v1/storage/password_manager \
+  -H "Authorization: Bearer invalid-token-12345"
+# Debe retornar: 401 Unauthorized
+```
+
+### Características de Seguridad
+
+- **Cacheo de tokens**: Los tokens se cachean en memoria para evitar solicitudes repetidas a Keycloak
+- **Renovación automática**: Los tokens se renuevan automáticamente 60 segundos antes de expirar
+- **Validación robusta**: Verificación de firma, issuer, audience y expiración
+- **Manejo de errores**: Si un token es rechazado (401), el caché se limpia automáticamente
+- **Integración con Circuit Breaker**: Los errores de autenticación se integran con el Circuit Breaker existente
+
+### Notas Importantes
+
+- **Keycloak Admin Console**: Disponible en http://localhost:8081 (usuario: `admin`, contraseña: `admin`)
+- **Secret del Client**: El secret está hardcodeado en el realm export como `password-service-secret-2024` para uso académico. En producción, debe ser más seguro y gestionado de forma segura.
+- **Compatibilidad**: El sistema mantiene soporte para `X-API-Key` como fallback si `USE_OAUTH2=false`, pero OAuth2 es el método recomendado.
 
 ## Comunicación Asíncrona con Kafka
 
@@ -273,25 +414,35 @@ docker run --rm -it -v deploy_storage_sqlite_data:/data alpine \
   sh -c "apk add --no-cache sqlite >/dev/null && sqlite3 /data/database.sqlite \"SELECT eventId, type, occurredAt FROM audit_password_events ORDER BY receivedAt DESC LIMIT 10;\""
 ```
 
-**O usar el endpoint de auditoría** (requiere X-API-Key):
+**O usar el endpoint de auditoría** (requiere Bearer token):
 
+Primero obtener un token:
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8081/realms/m14-microservicios/protocol/openid-connect/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=password-service-client" \
+  -d "client_secret=password-service-secret-2024" | jq -r '.access_token')
+```
+
+Luego usar el token:
 ```bash
 curl -X GET http://localhost:3001/api/v1/audit/password-events \
-  -H "X-API-Key: change-me"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 **Ver estadísticas de eventos**:
 
 ```bash
 curl -X GET http://localhost:3001/api/v1/audit/password-events/stats/summary \
-  -H "X-API-Key: change-me"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 **Ver un evento específico por eventId**:
 
 ```bash
 curl -X GET http://localhost:3001/api/v1/audit/password-events/{eventId} \
-  -H "X-API-Key: change-me"
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 #### 3. Verificar logs
@@ -342,7 +493,7 @@ KAFKA_GROUP_ID=storage-sqlite-group
 
 ## Endpoints del Microservicio B (storage-sqlite)
 
-**Nota**: Estos endpoints están expuestos en `localhost:3001`, pero requieren el header `X-API-Key` para su consumo.
+**Nota**: Estos endpoints están expuestos en `localhost:3001`, pero requieren el header `Authorization: Bearer <token>` para su consumo. El token debe ser obtenido desde Keycloak usando OAuth2 client_credentials.
 
 ```
 GET    /api/v1/storage/password_manager      # Listar todos
@@ -370,7 +521,8 @@ GET    /health                                # Health check
 - **Base de datos**: SQLite con archivo en volumen persistente
 - **ORM**: TypeORM con migrations (sin synchronize)
 - **PRAGMA WAL**: Modo Write-Ahead Logging habilitado
-- **Autenticación**: X-API-Key para comunicación interna
+- **Autenticación**: OAuth2 JWT Bearer tokens (validación con JWKS de Keycloak)
+  - Soporte legacy para X-API-Key (deshabilitado por defecto)
 
 ### Circuit Breaker
 
@@ -468,6 +620,12 @@ REQUEST_TIMEOUT_MS=3000
 RETRY_ATTEMPTS=2
 CB_FAILURE_THRESHOLD=5
 CB_RESET_TIMEOUT_MS=15000
+# OAuth2 / Keycloak Configuration
+USE_OAUTH2=true
+KEYCLOAK_URL=http://keycloak:8080
+KEYCLOAK_REALM=m14-microservicios
+KEYCLOAK_CLIENT_ID=password-service-client
+KEYCLOAK_CLIENT_SECRET=password-service-secret-2024
 ```
 
 ### storage-sqlite.example.env
@@ -477,6 +635,10 @@ PORT=3001
 LOG_LEVEL=info
 SQLITE_DB_PATH=/data/database.sqlite
 STORAGE_API_KEY=change-me
+# OAuth2 / Keycloak Configuration for JWT Validation
+KEYCLOAK_URL=http://keycloak:8080
+KEYCLOAK_REALM=m14-microservicios
+KEYCLOAK_AUDIENCE=password-service-client
 ```
 
 ## Redes Docker
@@ -487,15 +649,27 @@ STORAGE_API_KEY=change-me
 ## Volúmenes
 
 - **storage_sqlite_data**: Persiste el archivo `database.sqlite` del servicio B
+- **keycloak_data**: Persiste la base de datos interna de Keycloak
 
 ## Troubleshooting
 
 ### Los servicios no se comunican
 
 Verifica que:
-1. Las variables de entorno `STORAGE_API_KEY` coincidan en ambos servicios
-2. La URL `STORAGE_BASE_URL` sea correcta (usar el nombre del servicio Docker)
-3. Ambos servicios estén en la misma red `private_net`
+1. Keycloak esté funcionando y saludable: `curl http://localhost:8081/health/ready`
+2. El realm `m14-microservicios` esté importado correctamente (ver logs de Keycloak)
+3. Las variables de entorno de Keycloak coincidan en ambos servicios
+4. La URL `STORAGE_BASE_URL` sea correcta (usar el nombre del servicio Docker)
+5. Ambos servicios estén en la misma red `private_net`
+6. Los tokens OAuth2 se estén obteniendo correctamente (ver logs de password-service)
+
+### Error de autenticación OAuth2
+
+Si recibes errores 401 Unauthorized:
+1. Verifica que Keycloak esté disponible: `docker logs deploy-keycloak-1`
+2. Verifica que el client secret sea correcto en `password-service.example.env`
+3. Verifica que el realm y audience sean correctos en `storage-sqlite.example.env`
+4. Revisa los logs de ambos servicios para ver mensajes de error específicos
 
 ### Circuit Breaker está abierto
 

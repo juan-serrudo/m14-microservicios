@@ -1,14 +1,15 @@
 import { Controller, Get, Param, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiSecurity } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiSecurity, ApiBearerAuth } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AuditPasswordEvents } from '../entities/audit-password-events.entity';
-import { ApiKeyGuard } from '../guards/api-key.guard';
+import { JwtGuard } from '../guards/jwt.guard';
 
 @ApiTags('AUDITORÍA - EVENTOS')
-@ApiSecurity('X-API-Key')
+@ApiBearerAuth()
+@ApiSecurity('Bearer')
 @Controller('api/v1/audit/password-events')
-@UseGuards(ApiKeyGuard)
+@UseGuards(JwtGuard)
 export class AuditController {
   constructor(
     @InjectRepository(AuditPasswordEvents)
