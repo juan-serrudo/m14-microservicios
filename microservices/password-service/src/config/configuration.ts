@@ -19,7 +19,7 @@ export default () => {
     cbFailureThreshold: parseInt(process.env.CB_FAILURE_THRESHOLD || '5', 10) || 5,
     cbResetTimeoutMs: parseInt(process.env.CB_RESET_TIMEOUT_MS || '15000', 10) || 15000,
     swaggerShow: process.env.ENV_SWAGGER_SHOW === 'true' || false,
-    kafkaBrokers: process.env.KAFKA_BROKERS || 'kafka:9093',
+    kafkaBrokers: process.env.KAFKA_BROKERS || 'kafka:9092',
     kafkaTopicPasswordEvents: process.env.KAFKA_TOPIC_PASSWORD_EVENTS || 'passwords.v1.events',
     kafkaClientId: process.env.KAFKA_CLIENT_ID || 'password-service',
     useEda: process.env.USE_EDA === 'true' || false,

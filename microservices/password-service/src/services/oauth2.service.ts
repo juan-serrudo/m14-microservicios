@@ -65,12 +65,13 @@ export class OAuth2Service {
       this.logger.log(`Access token obtained and cached (expires in ${expiresIn}s)`);
       return this.cachedToken.token;
     } catch (error) {
-      this.logger.error('Failed to obtain access token from Keycloak', error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to obtain access token from Keycloak: ${errorMessage}`);
       throw new HttpException(
         {
           code: 'OAUTH2_TOKEN_ERROR',
           message: 'No se pudo obtener el token de autenticación',
-          details: error.message,
+          details: errorMessage,
         },
         HttpStatus.SERVICE_UNAVAILABLE,
       );

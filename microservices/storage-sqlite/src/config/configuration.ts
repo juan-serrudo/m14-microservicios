@@ -14,7 +14,7 @@ export default () => {
     sqliteDbPath: process.env.SQLITE_DB_PATH || '/data/database.sqlite',
     storageApiKey: process.env.STORAGE_API_KEY || 'change-me',
     swaggerShow: process.env.ENV_SWAGGER_SHOW === 'true' || false,
-    kafkaBrokers: process.env.KAFKA_BROKERS || 'kafka:9093',
+    kafkaBrokers: process.env.KAFKA_BROKERS || 'kafka:9092',
     kafkaTopicPasswordEvents: process.env.KAFKA_TOPIC_PASSWORD_EVENTS || 'passwords.v1.events',
     kafkaClientId: process.env.KAFKA_CLIENT_ID || 'storage-sqlite',
     kafkaGroupId: process.env.KAFKA_GROUP_ID || 'storage-sqlite-group',

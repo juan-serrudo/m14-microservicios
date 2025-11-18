@@ -52,10 +52,11 @@ m14-microservicios/
 │   │   ├── src/
 │   │   ├── Dockerfile
 │   │   └── package.json
-│   └── storage-sqlite/       # Microservicio B
-│       ├── src/
-│       ├── Dockerfile
-│       └── package.json
+│   ├── storage-sqlite/       # Microservicio B
+│   │   ├── src/
+│   │   ├── Dockerfile
+│   │   └── package.json
+│   └── m1/                   # Prácticas anteriores (no utilizado en deploy actual)
 └── deploy/
     ├── docker-compose.yml
     ├── lb-a/                 # Load Balancer
@@ -64,6 +65,8 @@ m14-microservicios/
     │   └── realm-export.json # Realm export para importación automática
     └── env/                  # Variables de entorno
 ```
+
+**Nota**: La carpeta `microservices/m1/` contiene código de prácticas anteriores y no es utilizada por el `docker-compose.yml` actual. Se mantiene por referencia histórica.
 
 ## Requisitos
 
@@ -110,7 +113,7 @@ Este comando:
 - **Storage SQLite**: `localhost:3001` (endpoints de auditoría, requiere Bearer token)
 - **Keycloak**: `localhost:8081` (Admin Console y endpoints OAuth2)
 - **Kafka**: `localhost:9092` (para clientes externos o pruebas locales)
-- **Kafka interno**: `kafka:9092` (comunicación interna entre contenedores)
+- **Kafka interno**: `kafka:9092` (comunicación interna entre contenedores, listener PLAINTEXT)
 - Kafka corre en modo **KRaft**, eliminando por completo la dependencia de ZooKeeper.
 
 #### Pasos rápidos de prueba
@@ -377,7 +380,7 @@ curl http://localhost:3001/api/v1/storage/password_manager \
 
 - **Keycloak Admin Console**: Disponible en http://localhost:8081 (usuario: `admin`, contraseña: `admin`)
 - **Secret del Client**: El secret está hardcodeado en el realm export como `password-service-secret-2024` para uso académico. En producción, debe ser más seguro y gestionado de forma segura.
-- **Compatibilidad**: El sistema mantiene soporte para `X-API-Key` como fallback si `USE_OAUTH2=false`, pero OAuth2 es el método recomendado.
+- **Nota sobre X-API-Key**: El código de `password-service` incluye lógica para usar `X-API-Key` cuando `USE_OAUTH2=false`, y existe un `ApiKeyGuard` en `storage-sqlite`. Sin embargo, **actualmente ningún controller usa `ApiKeyGuard`**; todos los endpoints protegidos usan `JwtGuard` con OAuth2. El soporte para X-API-Key está implementado pero no conectado, por lo que OAuth2 es el único método de autenticación activo.
 
 ## Comunicación Asíncrona con Kafka
 
@@ -505,7 +508,7 @@ Crear la misma contraseña múltiples veces y verificar que los eventos se proce
 
 **Variables de entorno (password-service)**:
 ```env
-KAFKA_BROKERS=kafka:9093
+KAFKA_BROKERS=kafka:9092
 KAFKA_TOPIC_PASSWORD_EVENTS=passwords.v1.events
 KAFKA_CLIENT_ID=password-service
 USE_EDA=true
@@ -513,7 +516,7 @@ USE_EDA=true
 
 **Variables de entorno (storage-sqlite)**:
 ```env
-KAFKA_BROKERS=kafka:9093
+KAFKA_BROKERS=kafka:9092
 KAFKA_TOPIC_PASSWORD_EVENTS=passwords.v1.events
 KAFKA_CLIENT_ID=storage-sqlite
 KAFKA_GROUP_ID=storage-sqlite-group
@@ -576,7 +579,7 @@ GET    /health                                          # Health check (sin aute
   - Valida tokens usando JWKS endpoint de Keycloak
   - Verifica: firma (RS256), issuer (`iss`), audience (`aud`), expiración (`exp`)
   - Rechaza peticiones sin token o con token inválido
-  - Soporte legacy para X-API-Key (deshabilitado por defecto, solo si `USE_OAUTH2=false`)
+  - **Nota**: El código incluye soporte para X-API-Key como fallback (`ApiKeyGuard`), pero actualmente no está conectado en ningún controller. Todos los endpoints usan `JwtGuard` con OAuth2.
 
 ### Circuit Breaker
 
