@@ -461,6 +461,14 @@ TOKEN=$(curl -s -X POST http://localhost:8081/realms/m14-microservicios/protocol
   -d "grant_type=client_credentials" \
   -d "client_id=password-service-client" \
   -d "client_secret=password-service-secret-2024" | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# Verificar que el token se obtuvo correctamente
+if [ -z "$TOKEN" ]; then
+  echo "Error: No se pudo obtener el token. Verifica que Keycloak esté corriendo."
+  exit 1
+fi
+
+echo "Token obtenido (primeros 50 caracteres): ${TOKEN:0:50}..."
 ```
 
 Luego usar el token:
@@ -468,6 +476,8 @@ Luego usar el token:
 curl -X GET http://localhost:3001/api/v1/audit/password-events \
   -H "Authorization: Bearer $TOKEN"
 ```
+
+**Nota**: El `JwtGuard` acepta tokens con issuer de `localhost:8081` (obtenidos desde el host) o `keycloak:8080` (obtenidos desde dentro de Docker), por lo que puedes usar tokens obtenidos desde el host para pruebas.
 
 **Ver estadísticas de eventos**:
 

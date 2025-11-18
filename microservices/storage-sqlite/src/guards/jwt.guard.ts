@@ -25,16 +25,22 @@ interface JwtPayload {
 export class JwtGuard implements CanActivate {
   private readonly logger = new Logger(JwtGuard.name);
   private readonly jwksClient: JwksClient;
-  private readonly expectedIssuer: string;
+  private readonly expectedIssuers: string[];
   private readonly expectedAudience: string;
 
   constructor(private configService: ConfigService) {
     const keycloakUrl = this.configService.get<string>('keycloakUrl') || 'http://keycloak:8080';
     const realm = this.configService.get<string>('keycloakRealm') || 'm14-microservicios';
-    this.expectedIssuer = `${keycloakUrl}/realms/${realm}`;
     this.expectedAudience = this.configService.get<string>('keycloakAudience') || 'password-service-client';
 
+    // Aceptar tokens con issuer de la red interna (keycloak:8080) o del host (localhost:8081)
+    // Esto permite usar tokens obtenidos desde el host para pruebas
+    const internalIssuer = `${keycloakUrl}/realms/${realm}`;
+    const hostIssuer = `http://localhost:8081/realms/${realm}`;
+    this.expectedIssuers = [internalIssuer, hostIssuer];
+
     // Configurar JWKS client para obtener las claves públicas de Keycloak
+    // Usar la URL interna para JWKS (desde dentro de Docker)
     const jwksUri = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/certs`;
     this.jwksClient = new JwksClient({
       jwksUri,
@@ -44,7 +50,7 @@ export class JwtGuard implements CanActivate {
       jwksRequestsPerMinute: 10,
     });
 
-    this.logger.log(`JWT Guard initialized - Issuer: ${this.expectedIssuer}, Audience: ${this.expectedAudience}`);
+    this.logger.log(`JWT Guard initialized - Accepted issuers: ${this.expectedIssuers.join(', ')}, Audience: ${this.expectedAudience}`);
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -87,9 +93,9 @@ export class JwtGuard implements CanActivate {
         algorithms: ['RS256'],
       }) as JwtPayload;
 
-      // Validar issuer
-      if (payload.iss !== this.expectedIssuer) {
-        this.logger.warn(`Invalid issuer: ${payload.iss}, expected: ${this.expectedIssuer}`);
+      // Validar issuer (aceptar tanto issuer interno como del host)
+      if (!payload.iss || !this.expectedIssuers.includes(payload.iss)) {
+        this.logger.warn(`Invalid issuer: ${payload.iss}, expected one of: ${this.expectedIssuers.join(', ')}`);
         throw new UnauthorizedException('Invalid token issuer');
       }
 
